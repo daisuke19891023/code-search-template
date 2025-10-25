@@ -24,7 +24,7 @@ class GrepParams(ToolParam):
 
     pattern: str
     root: str
-    extra_args: list[str] = Field(default_factory=lambda: ["-n", "-S", "--hidden"])
+    timeout_s: float | None = 30.0
 
 
 class GrepHit(BaseModel):

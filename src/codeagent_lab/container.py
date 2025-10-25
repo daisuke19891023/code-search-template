@@ -53,7 +53,7 @@ def build_container() -> Container:
     tools.register("ast", ast_treesitter_multi.TreeSitterTool(provider=provider, queries={}))
 
     store = ExperimentStore(settings.duckdb_path, settings.parquet_root)
-    logger.info("boot", event="boot")
+    logger.info("boot")
     return Container(
         settings=settings,
         logger=logger,
