@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/pyright/main/packages/pyright-internal/src/pyright-internal-schema.json",
+  "include": ["src"],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    ".venv",
+    "venv",
+    ".nox",
+    "build",
+    "dist"
+  ],
+  "extraPaths": ["src"],
+  "typeCheckingMode": "strict",
+  "reportMissingImports": "warning",
+  "reportMissingTypeStubs": "none"
+}
