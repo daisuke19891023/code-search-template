@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from codeagent_lab.models import AstFinding, AstParams, AstResult
+from codeagent_lab.tools._path_filters import resolve_within_root
 from codeagent_lab.tools.protocols import Tool
 
 if TYPE_CHECKING:
@@ -58,10 +59,14 @@ def _load_default_queries(language: str) -> dict[str, str]:
 
 def _relative_path(root: Path, path: Path) -> str:
     """Return the ``path`` relative to ``root`` with POSIX separators."""
+    resolved_root = root.resolve()
     try:
         relative = path.relative_to(root)
     except ValueError:
-        relative = path
+        try:
+            relative = path.relative_to(resolved_root)
+        except ValueError:
+            relative = path
     return relative.as_posix()
 
 
@@ -155,14 +160,16 @@ class TreeSitterTool(Tool[AstParams, AstResult]):
         seen: set[tuple[str, str, int, str]] = set()
         scope_globs = tuple(params.scope_globs or [])
 
+        resolved_root = root.resolve()
         for language_name, context in contexts.items():
             patterns = self._file_globs.get(language_name, ("*",))
             processed: set[str] = set()
             for pattern in patterns:
                 for file_path in root.rglob(pattern):
-                    if not file_path.is_file():
+                    resolved = resolve_within_root(resolved_root, file_path)
+                    if resolved is None or not resolved.is_file():
                         continue
-                    relative = _relative_path(root, file_path)
+                    relative = _relative_path(root, resolved)
                     if relative in processed:
                         continue
                     processed.add(relative)
@@ -171,7 +178,7 @@ class TreeSitterTool(Tool[AstParams, AstResult]):
                     findings.extend(
                         self._scan_file(
                             context=context,
-                            file_path=file_path,
+                            file_path=resolved,
                             relative_path=relative,
                             symbol_filter=params.symbol,
                             seen=seen,

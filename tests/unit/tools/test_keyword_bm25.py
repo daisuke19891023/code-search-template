@@ -4,11 +4,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
+
 from codeagent_lab.models import KeywordParams
 from codeagent_lab.tools.keyword_bm25 import KeywordBM25Tool
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def _create_symlink(link: Path, target: Path) -> None:
+    """Create a symlink or skip the test when unsupported."""
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlinks not supported: {exc}")
 
 
 def test_keyword_bm25_ranks_relevant_files(tmp_path: Path) -> None:
@@ -56,3 +66,27 @@ def test_keyword_bm25_reports_missing_root(tmp_path: Path) -> None:
     assert result.ok is False
     assert result.hits == []
     assert result.meta["error"] == "root-missing"
+
+
+def test_keyword_bm25_ignores_symlinks_outside_root(tmp_path: Path) -> None:
+    """Symlinked files that escape the root are not indexed."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "inside.txt").write_text("ranking algorithms inside\n")
+
+    external_dir = tmp_path / "external"
+    external_dir.mkdir()
+    external_file = external_dir / "outside.txt"
+    external_file.write_text("ranking data outside\n")
+
+    link = repo_root / "link.txt"
+    _create_symlink(link, external_file)
+
+    tool = KeywordBM25Tool()
+    params = KeywordParams(query="ranking", root=str(repo_root), topk=5)
+
+    result = tool.run(params)
+
+    assert result.ok is True
+    paths = {hit.path for hit in result.hits}
+    assert paths == {"inside.txt"}

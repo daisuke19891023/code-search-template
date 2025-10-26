@@ -12,6 +12,7 @@ from rank_bm25 import BM25Okapi
 
 from codeagent_lab.models import KeywordHit, KeywordParams, KeywordResult
 from codeagent_lab.tools.protocols import Tool
+from codeagent_lab.tools._path_filters import resolve_within_root
 
 
 _TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_]+")
@@ -96,19 +97,25 @@ class KeywordBM25Tool(Tool[KeywordParams, KeywordResult]):
     def _load_documents(self, root: Path) -> list[_Document]:
         """Collect tokenized documents under ``root`` suitable for BM25."""
         documents: list[_Document] = []
+        resolved_root = root.resolve()
         for path in sorted(root.rglob("*")):
-            if not path.is_file():
-                continue
-            if any(part.startswith(".") for part in path.relative_to(root).parts if part != "."):
+            resolved = resolve_within_root(resolved_root, path)
+            if resolved is None or not resolved.is_file():
                 continue
             try:
-                size = path.stat().st_size
+                relative = resolved.relative_to(resolved_root)
+            except ValueError:
+                continue
+            if any(part.startswith(".") for part in relative.parts if part not in {"", "."}):
+                continue
+            try:
+                size = resolved.stat().st_size
             except OSError:
                 continue
             if size > self.max_file_bytes:
                 continue
             try:
-                text = path.read_text(encoding="utf-8", errors="ignore")
+                text = resolved.read_text(encoding="utf-8", errors="ignore")
             except OSError:
                 continue
             if "\x00" in text:
@@ -116,7 +123,7 @@ class KeywordBM25Tool(Tool[KeywordParams, KeywordResult]):
             tokens = self._tokenize(text)
             if not tokens:
                 continue
-            documents.append(_Document(path=path, tokens=tokens))
+            documents.append(_Document(path=resolved, tokens=tokens))
 
         return documents
 
@@ -131,4 +138,8 @@ class KeywordBM25Tool(Tool[KeywordParams, KeywordResult]):
         try:
             return path.relative_to(root)
         except ValueError:
-            return path
+            resolved_root = root.resolve()
+            try:
+                return path.relative_to(resolved_root)
+            except ValueError:
+                return path

@@ -4,11 +4,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
+
 from codeagent_lab.models import FindParams
 from codeagent_lab.tools.find_fd import FdTool
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def _create_symlink(link: Path, target: Path) -> None:
+    """Create a symlink or skip the test when unsupported."""
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlinks not supported: {exc}")
 
 
 def test_fd_tool_filters_by_pattern(tmp_path: Path) -> None:
@@ -54,3 +64,26 @@ def test_fd_tool_rejects_unknown_type(tmp_path: Path) -> None:
 
     assert result.ok is False
     assert result.meta["error"] == "invalid-type"
+
+
+def test_fd_tool_ignores_symlinks_outside_root(tmp_path: Path) -> None:
+    """Entries reached via symlinks outside the root are skipped."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "inside.txt").write_text("content\n")
+
+    external_dir = tmp_path / "external"
+    external_dir.mkdir()
+    external_file = external_dir / "outside.txt"
+    external_file.write_text("secret\n")
+
+    _create_symlink(repo_root / "link.txt", external_file)
+
+    tool = FdTool()
+    params = FindParams(root=str(repo_root))
+
+    result = tool.run(params)
+
+    assert result.ok is True
+    paths = {item.path for item in result.items}
+    assert paths == {"inside.txt"}

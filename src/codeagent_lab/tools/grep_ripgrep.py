@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from codeagent_lab.models import GrepHit, GrepParams, GrepResult
+from codeagent_lab.tools._path_filters import resolve_within_root
 from codeagent_lab.tools.protocols import Tool
 
 
@@ -65,20 +66,22 @@ class RipgrepTool(Tool[GrepParams, GrepResult]):
         """Search files using a pure Python implementation."""
         regex = re.compile(pattern)
         hits: list[GrepHit] = []
+        resolved_root = root.resolve()
         for file_path in root.rglob("*"):
-            if not file_path.is_file():
+            resolved = resolve_within_root(resolved_root, file_path)
+            if resolved is None or not resolved.is_file():
                 continue
             try:
-                content = file_path.read_text(encoding="utf-8", errors="ignore")
+                content = resolved.read_text(encoding="utf-8", errors="ignore")
             except OSError:
                 continue
             for line_number, line in enumerate(content.splitlines(), start=1):
                 if not regex.search(line):
                     continue
                 try:
-                    relative = file_path.relative_to(root)
+                    relative = resolved.relative_to(resolved_root)
                 except ValueError:
-                    relative = file_path
+                    relative = resolved
                 hits.append(
                     GrepHit(path=str(relative), line=line_number, text=line.rstrip("\n")),
                 )
