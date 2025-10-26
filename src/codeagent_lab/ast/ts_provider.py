@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeagent_lab.ast.protocols import AstLanguageProvider
+
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -44,15 +48,33 @@ class TreeSitterProvider(AstLanguageProvider):
     def _load_from_source(self, name: str, source: str | Path) -> Language | None:
         """Load a language from an explicit source mapping."""
         if isinstance(source, Path):
-            from tree_sitter import Language as TreeLanguage
+            try:
+                from tree_sitter import Language as TreeLanguage
 
-            return TreeLanguage(str(source), name)
+                return TreeLanguage(str(source), name)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to load tree-sitter language '%s' from '%s': %s",
+                    name,
+                    source,
+                    exc,
+                )
+                return None
 
         path_candidate = Path(source)
         if path_candidate.exists():
-            from tree_sitter import Language as TreeLanguage
+            try:
+                from tree_sitter import Language as TreeLanguage
 
-            return TreeLanguage(str(path_candidate), name)
+                return TreeLanguage(str(path_candidate), name)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to load tree-sitter language '%s' from '%s': %s",
+                    name,
+                    path_candidate,
+                    exc,
+                )
+                return None
         return self._load_from_module(str(source))
 
     def _load_from_default(self, name: str) -> Language | None:
@@ -65,6 +87,13 @@ class TreeSitterProvider(AstLanguageProvider):
         try:
             module = import_module(module_name)
         except ModuleNotFoundError:
+            return None
+        except Exception as exc:
+            logger.warning(
+                "Failed to import tree-sitter language module '%s': %s",
+                module_name,
+                exc,
+            )
             return None
 
         language = self._resolve_language(getattr(module, "language", None))
@@ -83,7 +112,11 @@ class TreeSitterProvider(AstLanguageProvider):
         if not callable(candidate):
             return None
 
-        result = candidate()
+        try:
+            result = candidate()
+        except Exception as exc:
+            logger.warning("Tree-sitter language factory raised an error: %s", exc)
+            return None
         from tree_sitter import Language as TreeLanguage
 
         if isinstance(result, TreeLanguage):
