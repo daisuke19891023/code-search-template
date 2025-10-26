@@ -95,6 +95,8 @@ def load_run_records(parquet_root: pathlib.Path) -> list[RunRecord]:
             if record is not None:
                 records.append(record)
 
+    records = _filter_existing_records(records)
+
     def _sort_key(record: RunRecord) -> float:
         try:
             return record.path.stat().st_mtime
@@ -107,6 +109,12 @@ def load_run_records(parquet_root: pathlib.Path) -> list[RunRecord]:
 
 def _record_from_row(row: dict[str, Any], path: pathlib.Path) -> RunRecord | None:
     """Convert a Parquet row dictionary into a ``RunRecord`` if possible."""
+    try:
+        if not path.exists():
+            return None
+    except OSError:
+        return None
+
     run_id_raw = row.get("run_id")
     if run_id_raw is None:
         return None
@@ -134,6 +142,18 @@ def _record_from_row(row: dict[str, Any], path: pathlib.Path) -> RunRecord | Non
         trace=trace,
         path=path,
     )
+
+
+def _filter_existing_records(records: list[RunRecord]) -> list[RunRecord]:
+    """Return only records whose backing Parquet files still exist."""
+    existing: list[RunRecord] = []
+    for record in records:
+        try:
+            if record.path.exists():
+                existing.append(record)
+        except OSError:
+            continue
+    return existing
 
 
 def _parse_metrics(metrics_raw: dict[str, Any]) -> dict[str, float]:
