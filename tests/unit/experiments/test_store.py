@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import duckdb
 import pyarrow.parquet as pq
+import pytest
 
 from codeagent_lab.experiments.store import ExperimentStore
 from codeagent_lab.models import FlowTrace
@@ -45,3 +46,37 @@ def test_log_run_appends_to_parquet_and_duckdb(tmp_path: pathlib.Path) -> None:
     with duckdb.connect(duckdb_path) as conn:
         count = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
         assert count == 2
+
+
+def test_log_run_sanitises_filename(tmp_path: pathlib.Path) -> None:
+    """The Parquet filename should be derived from a sanitised identifier."""
+    duckdb_path = tmp_path / "db" / "runs.duckdb"
+    parquet_root = tmp_path / "parquet"
+    store = ExperimentStore(duckdb_path=duckdb_path, parquet_root=parquet_root)
+
+    run_id = "Experiment Run#1"
+    store.log_run(run_id, {"alpha": 1}, {"score": 0.3}, _make_trace(run_id))
+
+    expected_filename = parquet_root / "Experiment_Run_1.parquet"
+    assert expected_filename.exists()
+
+    table = pq.read_table(expected_filename)
+    rows = table.to_pylist()
+    assert len(rows) == 1
+    assert rows[0]["run_id"] == run_id
+
+    with duckdb.connect(duckdb_path) as conn:
+        result = conn.execute("SELECT run_id FROM runs").fetchone()[0]
+    assert result == run_id
+
+
+def test_log_run_rejects_invalid_run_ids(tmp_path: pathlib.Path) -> None:
+    """Reject run identifiers that could lead to path traversal."""
+    duckdb_path = tmp_path / "db" / "runs.duckdb"
+    parquet_root = tmp_path / "parquet"
+    store = ExperimentStore(duckdb_path=duckdb_path, parquet_root=parquet_root)
+
+    invalid_ids = ["../sneaky", "run/../../evil", "nested\\path"]
+    for invalid in invalid_ids:
+        with pytest.raises(ValueError, match="run_id must"):
+            store.log_run(invalid, {"alpha": 1}, {"score": 0.1}, _make_trace("run"))
