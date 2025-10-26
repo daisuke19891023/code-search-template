@@ -87,14 +87,14 @@ class SemanticOpenAITool(Tool[SemanticParams, SemanticResult]):
                 manifest = self._load_manifest(index_dir)
             except (OSError, ValueError, json.JSONDecodeError):
                 # Fall back to rebuilding the index when persistence is invalid.
-                pass
+                self._remove_manifest(index_dir)
             else:
                 if self._manifest_matches(manifest):
                     try:
                         self._index.load(str(index_dir))
                     except (OSError, ValueError, RuntimeError):
                         # Fall back to rebuilding the index when persisted data is corrupt.
-                        pass
+                        self._remove_manifest(index_dir)
                     else:
                         documents = [str(doc) for doc in manifest.get("documents", [])]
                         return documents, False
@@ -183,6 +183,16 @@ class SemanticOpenAITool(Tool[SemanticParams, SemanticResult]):
             message = "manifest missing documents list"
             raise ValueError(message)
         return data
+
+    def _remove_manifest(self, index_dir: Path) -> None:
+        """Best-effort removal of a stale manifest before rebuilding."""
+        manifest_path = self._manifest_path(index_dir)
+        try:
+            manifest_path.unlink()
+        except FileNotFoundError:
+            return
+        except OSError:
+            return
 
     def _manifest_matches(self, manifest: dict[str, Any]) -> bool:
         """Return ``True`` if the manifest is compatible with the embedder/index."""

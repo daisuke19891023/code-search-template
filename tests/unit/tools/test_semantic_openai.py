@@ -181,6 +181,40 @@ def test_semantic_tool_reuses_existing_index(tmp_path: Path) -> None:
     assert reuse_embedder.calls[0] == [params.query]
 
 
+def test_semantic_tool_rebuilds_when_load_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Indexes are rebuilt when loading persisted state fails."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "sorting.py").write_text("Sorting helpers.\n")
+
+    index_root = tmp_path / "indexes"
+    initial_embedder = RecordingEmbedder()
+    initial_index = InMemoryIndex(initial_embedder.dimension)
+    tool = SemanticOpenAITool(initial_embedder, initial_index, str(index_root))
+    params = SemanticParams(query="Need to sort items", root=str(repo_root), topk=3)
+
+    # Persist an initial index.
+    tool.run(params)
+
+    def failing_load(_self: InMemoryIndex, _path: str | Path) -> None:
+        raise RuntimeError("load failed")
+
+    monkeypatch.setattr(InMemoryIndex, "load", failing_load, raising=True)
+
+    rebuild_embedder = RecordingEmbedder()
+    rebuild_index = InMemoryIndex(rebuild_embedder.dimension)
+    rebuild_tool = SemanticOpenAITool(rebuild_embedder, rebuild_index, str(index_root))
+
+    result = rebuild_tool.run(params)
+
+    assert result.ok is True
+    assert result.meta["index"]["built"] is True
+    assert rebuild_embedder.calls[0][0] == "Sorting helpers.\n"
+    assert rebuild_embedder.calls[1] == [params.query]
+
+
 def test_semantic_tool_reports_missing_root(tmp_path: Path) -> None:
     """Missing repositories are reported with ``ok=False``."""
     index_root = tmp_path / "indexes"
