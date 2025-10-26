@@ -14,6 +14,15 @@ from codeagent_lab.container import build_container
 app = typer.Typer(help="Run code search tools and inspect their schemas.")
 
 
+def _build_container_or_exit() -> Any:
+    """Return a configured container or exit with an error message."""
+    try:
+        return build_container()
+    except (ValidationError, ValueError) as exc:
+        typer.echo(f"Failed to initialize container: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
 @app.command()
 def run(
     domain: str = typer.Option(..., "--domain", "-d", help="Tool domain to execute."),
@@ -31,7 +40,7 @@ def run(
         typer.echo(f"Invalid JSON: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    container = build_container()
+    container = _build_container_or_exit()
     try:
         tool = container.tools.get(domain)
     except KeyError as exc:  # pragma: no cover - validated via CLI tests
@@ -62,7 +71,7 @@ def openai_spec(
     ),
 ) -> None:
     """Print the OpenAI function schema for the registered tools."""
-    container = build_container()
+    container = _build_container_or_exit()
     try:
         domains = (
             [(domain, container.tools.get(domain))]

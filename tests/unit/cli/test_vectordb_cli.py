@@ -153,3 +153,20 @@ def test_search_failure_surface_error(monkeypatch: pytest.MonkeyPatch, runner: C
 
     assert result.exit_code == 1
     assert "index-missing" in result.output
+
+
+def test_build_container_value_error(monkeypatch: pytest.MonkeyPatch, runner: CliRunner) -> None:
+    """Container validation errors produce a user-facing failure."""
+
+    def _raise_value_error() -> None:
+        raise ValueError("missing api key")
+
+    monkeypatch.setattr(vectordb_cli, "build_container", _raise_value_error)
+
+    result = runner.invoke(
+        vectordb_cli.app,
+        ["build", "--root", "."],
+    )
+
+    assert result.exit_code == 1
+    assert "Failed to initialize container: missing api key" in result.output

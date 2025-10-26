@@ -134,3 +134,20 @@ def test_openai_spec_unknown_domain(monkeypatch: pytest.MonkeyPatch, runner: Cli
 
     assert result.exit_code == 1
     assert "Unknown tool domain" in result.output
+
+
+def test_run_container_value_error(monkeypatch: pytest.MonkeyPatch, runner: CliRunner) -> None:
+    """Container construction failures surface a helpful error message."""
+
+    def _raise_value_error() -> None:
+        raise ValueError("bad container config")
+
+    monkeypatch.setattr(tools_cli, "build_container", _raise_value_error)
+
+    result = runner.invoke(
+        tools_cli.app,
+        ["run", "--domain", "echo", "--params-json", "{}"],
+    )
+
+    assert result.exit_code == 1
+    assert "Failed to initialize container: bad container config" in result.output

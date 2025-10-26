@@ -13,9 +13,18 @@ from codeagent_lab.models import SemanticParams
 app = typer.Typer(help="Manage vector indexes for semantic search.")
 
 
+def _build_container_or_exit() -> Any:
+    """Return the application container or exit with a friendly error."""
+    try:
+        return build_container()
+    except (ValidationError, ValueError) as exc:
+        typer.echo(f"Failed to initialize container: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
 def _get_semantic_tool() -> Any:
     """Return the registered semantic tool or exit with an error."""
-    container = build_container()
+    container = _build_container_or_exit()
     try:
         tool = container.tools.get("semantic")
     except KeyError as exc:
