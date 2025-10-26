@@ -6,6 +6,9 @@ import json
 
 from typing import TYPE_CHECKING
 
+import pyarrow as pa
+import pyarrow.parquet as pq
+
 from codeagent_lab.experiments.store import ExperimentStore
 from codeagent_lab.models import FlowTrace, ToolCall
 from codeagent_lab.ui.app import build_flow_graph, load_run_records
@@ -57,3 +60,32 @@ def test_build_flow_graph_generates_edges() -> None:
     assert "step_2" in source
     assert "step_1 -> step_2" in source
     assert json.dumps(trace.calls[0].result_summary, ensure_ascii=False) not in source
+
+
+def test_load_run_records_skips_invalid_trace_rows(tmp_path: Path) -> None:
+    """Rows with invalid trace payloads are skipped without raising errors."""
+    parquet_root = tmp_path / "parquet"
+    parquet_root.mkdir()
+
+    valid_trace = _make_trace("valid-run")
+    table = pa.Table.from_pylist(
+        [
+            {
+                "run_id": "invalid-run",
+                "params": json.dumps({}, ensure_ascii=False),
+                "metrics": json.dumps({}, ensure_ascii=False),
+                "trace": json.dumps({"run_id": "invalid-run", "calls": "oops"}, ensure_ascii=False),
+            },
+            {
+                "run_id": "valid-run",
+                "params": json.dumps({"alpha": 0.5}, ensure_ascii=False),
+                "metrics": json.dumps({"score": 0.75}, ensure_ascii=False),
+                "trace": json.dumps(valid_trace.model_dump(mode="json"), ensure_ascii=False),
+            },
+        ],
+    )
+    pq.write_table(table, str(parquet_root / "mixed.parquet"))
+
+    records = load_run_records(parquet_root)
+
+    assert [record.run_id for record in records] == ["valid-run"]
