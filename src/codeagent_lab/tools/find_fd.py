@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from codeagent_lab.models import FindItem, FindParams, FindResult
+from codeagent_lab.tools._path_filters import resolve_within_root
 from codeagent_lab.tools.protocols import Tool
 
 SUPPORTED_TYPES = {"file", "directory"}
@@ -47,14 +48,21 @@ class FdTool(Tool[FindParams, FindResult]):
             return FindResult(ok=False, items=[], latency_ms=latency_ms, meta=meta)
 
         matched: list[FindItem] = []
+        resolved_root = root.resolve()
         for candidate in root.rglob("*"):
-            if type_filter == "file" and not candidate.is_file():
+            resolved = resolve_within_root(resolved_root, candidate)
+            if resolved is None:
                 continue
-            if type_filter == "directory" and not candidate.is_dir():
+            if type_filter == "file" and not resolved.is_file():
+                continue
+            if type_filter == "directory" and not resolved.is_dir():
                 continue
 
-            relative = candidate.relative_to(root)
-            relative_str = str(relative)
+            try:
+                relative = resolved.relative_to(resolved_root)
+            except ValueError:
+                continue
+            relative_str = relative.as_posix()
 
             if pattern and not pattern.search(relative_str):
                 continue

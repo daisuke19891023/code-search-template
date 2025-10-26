@@ -6,9 +6,18 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from codeagent_lab.models import SemanticParams
 from codeagent_lab.tools.semantic_openai import SemanticOpenAITool
+
+
+def _create_symlink(link: Path, target: Path) -> None:
+    """Create a symlink or skip the test when unsupported."""
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlinks not supported: {exc}")
 
 
 class RecordingEmbedder:
@@ -187,3 +196,30 @@ def test_semantic_tool_reports_missing_root(tmp_path: Path) -> None:
     assert result.ok is False
     assert result.hits == []
     assert result.meta["error"] == "root-missing"
+
+
+def test_semantic_tool_ignores_symlinks_outside_root(tmp_path: Path) -> None:
+    """Symlinked files outside the root are not indexed or searched."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "keep.txt").write_text("Sort the array.\n")
+
+    external_dir = tmp_path / "external"
+    external_dir.mkdir()
+    external_file = external_dir / "secret.txt"
+    external_file.write_text("Sort secrets outside.\n")
+
+    _create_symlink(repo_root / "link.txt", external_file)
+
+    index_root = tmp_path / "indexes"
+    embedder = RecordingEmbedder()
+    index = InMemoryIndex(embedder.dimension)
+    tool = SemanticOpenAITool(embedder, index, str(index_root))
+
+    params = SemanticParams(query="sort", root=str(repo_root), topk=5)
+    result = tool.run(params)
+
+    assert result.ok is True
+    assert embedder.calls
+    assert all("secret" not in text for text in embedder.calls[0])
+    assert all(hit.path != "link.txt" for hit in result.hits)

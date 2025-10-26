@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from codeagent_lab.models import SemanticHit, SemanticParams, SemanticResult
+from codeagent_lab.tools._path_filters import resolve_within_root
 from codeagent_lab.tools.protocols import Tool
 
 if TYPE_CHECKING:
@@ -113,20 +114,25 @@ class SemanticOpenAITool(Tool[SemanticParams, SemanticResult]):
     def _collect_documents(self, root: Path) -> list[_Document]:
         """Return text documents under ``root`` suitable for indexing."""
         documents: list[_Document] = []
+        resolved_root = root.resolve()
         for path in sorted(root.rglob("*")):
-            if not path.is_file():
+            resolved = resolve_within_root(resolved_root, path)
+            if resolved is None or not resolved.is_file():
                 continue
-            relative = self._relative_path(root, path)
+            try:
+                relative = resolved.relative_to(resolved_root)
+            except ValueError:
+                continue
             if self._is_hidden(relative):
                 continue
             try:
-                size = path.stat().st_size
+                size = resolved.stat().st_size
             except OSError:
                 continue
             if size > self.max_file_bytes:
                 continue
             try:
-                text = path.read_text(encoding="utf-8", errors="ignore")
+                text = resolved.read_text(encoding="utf-8", errors="ignore")
             except OSError:
                 continue
             if "\x00" in text:
@@ -188,7 +194,11 @@ class SemanticOpenAITool(Tool[SemanticParams, SemanticResult]):
         try:
             return path.relative_to(root)
         except ValueError:
-            return path
+            resolved_root = root.resolve()
+            try:
+                return path.relative_to(resolved_root)
+            except ValueError:
+                return path
 
     @staticmethod
     def _is_hidden(path: Path) -> bool:
