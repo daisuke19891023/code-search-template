@@ -11,7 +11,11 @@ import structlog
 
 def configure(level: str = "INFO", json_out: bool = True) -> structlog.BoundLogger:
     """Configure structlog for the application and return a bound logger."""
-    logging.basicConfig(level=getattr(logging, level.upper(), logging.INFO), stream=sys.stdout)
+    logging.basicConfig(
+        level=getattr(logging, level.upper(), logging.INFO),
+        stream=sys.stderr,
+        force=True,
+    )
     processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
@@ -23,6 +27,7 @@ def configure(level: str = "INFO", json_out: bool = True) -> structlog.BoundLogg
     structlog.configure(
         processors=processors,
         wrapper_class=structlog.make_filtering_bound_logger(getattr(logging, level.upper(), logging.INFO)),
+        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
         context_class=dict,
         cache_logger_on_first_use=True,
     )
