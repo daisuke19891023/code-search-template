@@ -90,9 +90,14 @@ class SemanticOpenAITool(Tool[SemanticParams, SemanticResult]):
                 pass
             else:
                 if self._manifest_matches(manifest):
-                    self._index.load(str(index_dir))
-                    documents = [str(doc) for doc in manifest.get("documents", [])]
-                    return documents, False
+                    try:
+                        self._index.load(str(index_dir))
+                    except (OSError, ValueError, RuntimeError):
+                        # Fall back to rebuilding the index when persisted data is corrupt.
+                        pass
+                    else:
+                        documents = [str(doc) for doc in manifest.get("documents", [])]
+                        return documents, False
         return self._build_index(root, index_dir)
 
     def _build_index(self, root: Path, index_dir: Path) -> tuple[list[str], bool]:
