@@ -9,7 +9,10 @@ import numpy as np
 import pytest
 
 from codeagent_lab.models import SemanticParams
-from codeagent_lab.tools.semantic_openai import SemanticOpenAITool
+from codeagent_lab.tools.semantic_openai import (
+    SemanticIndexManager,
+    SemanticOpenAITool,
+)
 
 
 def _create_symlink(link: Path, target: Path) -> None:
@@ -129,6 +132,35 @@ class InMemoryIndex:
         return matrix / norms
 
 
+def test_index_manager_builds_and_reuses_index(tmp_path: Path) -> None:
+    """The index manager builds once and reloads persisted state on reuse."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "a.py").write_text("Sort arrays.\n")
+    (repo_root / "b.py").write_text("Configure systems.\n")
+
+    index_root = tmp_path / "indexes"
+    embedder = RecordingEmbedder()
+    index = InMemoryIndex(embedder.dimension)
+    manager = SemanticIndexManager(embedder, index, index_root)
+
+    first_docs, first_built = manager.ensure_index(repo_root)
+
+    assert first_built is True
+    assert sorted(first_docs) == ["a.py", "b.py"]
+    assert embedder.calls[0][0] == "Sort arrays.\n"
+
+    reuse_embedder = RecordingEmbedder()
+    reuse_index = InMemoryIndex(reuse_embedder.dimension)
+    reuse_manager = SemanticIndexManager(reuse_embedder, reuse_index, index_root)
+
+    second_docs, second_built = reuse_manager.ensure_index(repo_root)
+
+    assert second_built is False
+    assert second_docs == first_docs
+    assert reuse_embedder.calls == []
+
+
 def test_semantic_tool_builds_index_and_returns_hits(tmp_path: Path) -> None:
     """The semantic tool embeds files, persists an index, and ranks relevant hits."""
     repo_root = tmp_path / "repo"
@@ -140,7 +172,8 @@ def test_semantic_tool_builds_index_and_returns_hits(tmp_path: Path) -> None:
     index_root = tmp_path / "indexes"
     embedder = RecordingEmbedder()
     index = InMemoryIndex(embedder.dimension)
-    tool = SemanticOpenAITool(embedder, index, str(index_root))
+    manager = SemanticIndexManager(embedder, index, index_root)
+    tool = SemanticOpenAITool(embedder, manager)
 
     params = SemanticParams(query="How do we sort numbers?", root=str(repo_root), topk=5)
     result = tool.run(params)
@@ -164,7 +197,8 @@ def test_semantic_tool_reuses_existing_index(tmp_path: Path) -> None:
     index_root = tmp_path / "indexes"
     initial_embedder = RecordingEmbedder()
     initial_index = InMemoryIndex(initial_embedder.dimension)
-    tool = SemanticOpenAITool(initial_embedder, initial_index, str(index_root))
+    initial_manager = SemanticIndexManager(initial_embedder, initial_index, index_root)
+    tool = SemanticOpenAITool(initial_embedder, initial_manager)
     params = SemanticParams(query="Need to sort items", root=str(repo_root), topk=3)
 
     first_result = tool.run(params)
@@ -172,7 +206,8 @@ def test_semantic_tool_reuses_existing_index(tmp_path: Path) -> None:
 
     reuse_embedder = RecordingEmbedder()
     reuse_index = InMemoryIndex(reuse_embedder.dimension)
-    reuse_tool = SemanticOpenAITool(reuse_embedder, reuse_index, str(index_root))
+    reuse_manager = SemanticIndexManager(reuse_embedder, reuse_index, index_root)
+    reuse_tool = SemanticOpenAITool(reuse_embedder, reuse_manager)
 
     second_result = reuse_tool.run(params)
 
@@ -192,7 +227,8 @@ def test_semantic_tool_rebuilds_when_load_fails(
     index_root = tmp_path / "indexes"
     initial_embedder = RecordingEmbedder()
     initial_index = InMemoryIndex(initial_embedder.dimension)
-    tool = SemanticOpenAITool(initial_embedder, initial_index, str(index_root))
+    initial_manager = SemanticIndexManager(initial_embedder, initial_index, index_root)
+    tool = SemanticOpenAITool(initial_embedder, initial_manager)
     params = SemanticParams(query="Need to sort items", root=str(repo_root), topk=3)
 
     # Persist an initial index.
@@ -205,7 +241,8 @@ def test_semantic_tool_rebuilds_when_load_fails(
 
     rebuild_embedder = RecordingEmbedder()
     rebuild_index = InMemoryIndex(rebuild_embedder.dimension)
-    rebuild_tool = SemanticOpenAITool(rebuild_embedder, rebuild_index, str(index_root))
+    rebuild_manager = SemanticIndexManager(rebuild_embedder, rebuild_index, index_root)
+    rebuild_tool = SemanticOpenAITool(rebuild_embedder, rebuild_manager)
 
     result = rebuild_tool.run(params)
 
@@ -220,7 +257,8 @@ def test_semantic_tool_reports_missing_root(tmp_path: Path) -> None:
     index_root = tmp_path / "indexes"
     embedder = RecordingEmbedder()
     index = InMemoryIndex(embedder.dimension)
-    tool = SemanticOpenAITool(embedder, index, str(index_root))
+    manager = SemanticIndexManager(embedder, index, index_root)
+    tool = SemanticOpenAITool(embedder, manager)
 
     missing_root = tmp_path / "missing"
     params = SemanticParams(query="anything", root=str(missing_root))
@@ -248,7 +286,8 @@ def test_semantic_tool_ignores_symlinks_outside_root(tmp_path: Path) -> None:
     index_root = tmp_path / "indexes"
     embedder = RecordingEmbedder()
     index = InMemoryIndex(embedder.dimension)
-    tool = SemanticOpenAITool(embedder, index, str(index_root))
+    manager = SemanticIndexManager(embedder, index, index_root)
+    tool = SemanticOpenAITool(embedder, manager)
 
     params = SemanticParams(query="sort", root=str(repo_root), topk=5)
     result = tool.run(params)

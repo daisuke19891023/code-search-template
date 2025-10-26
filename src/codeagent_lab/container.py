@@ -47,12 +47,16 @@ def build_container(settings: Settings | None = None) -> Container:
     embedder = _create_embedding_backend(resolved_settings)
     vectordb = _create_vector_index(resolved_settings, embedder)
     if embedder is not None and vectordb is not None:
+        index_manager = semantic_openai.SemanticIndexManager(
+            embedder=embedder,
+            index=vectordb,
+            index_root=str(resolved_settings.index_root),
+        )
         tools.register(
             "semantic",
             semantic_openai.SemanticOpenAITool(
                 embedder=embedder,
-                index=vectordb,
-                index_root=str(resolved_settings.index_root),
+                index_manager=index_manager,
             ),
         )
 

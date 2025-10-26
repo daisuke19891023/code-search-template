@@ -27,73 +27,62 @@ class _Document:
     text: str
 
 
-class SemanticOpenAITool(Tool[SemanticParams, SemanticResult]):
-    """Embed repository files, persist a vector index, and execute search."""
+DEFAULT_MAX_FILE_BYTES = 512_000
+DEFAULT_MANIFEST_NAME = "manifest.json"
 
-    name = "semantic.openai"
-    Param = SemanticParams
-    Result = SemanticResult
 
-    max_file_bytes = 512_000
-    _manifest_name = "manifest.json"
+class SemanticIndexManager:
+    """Manage persistence and lifecycle of semantic search indexes."""
 
-    def __init__(self, embedder: EmbeddingBackend, index: VectorIndex, index_root: str) -> None:
-        """Initialise the semantic tool with dependencies."""
+    def __init__(
+        self,
+        embedder: EmbeddingBackend,
+        index: VectorIndex,
+        index_root: str | Path,
+        *,
+        max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
+        manifest_name: str = DEFAULT_MANIFEST_NAME,
+    ) -> None:
+        """Initialise the index manager with persistence dependencies."""
         self._embedder = embedder
         self._index = index
         self._index_root = Path(index_root)
+        self._max_file_bytes = max_file_bytes
+        self._manifest_name = manifest_name
 
-    def run(self, params: SemanticParams) -> SemanticResult:
-        """Embed the query and search against a persisted vector index."""
-        start = time.perf_counter()
-        root = Path(params.root)
-        if not root.is_dir():
-            latency_ms = int((time.perf_counter() - start) * 1000)
-            meta = {"error": "root-missing", "root": str(root)}
-            return SemanticResult(ok=False, hits=[], latency_ms=latency_ms, meta=meta)
+    @property
+    def index(self) -> VectorIndex:
+        """Return the managed vector index instance."""
+        return self._index
 
-        index_dir = self._index_directory(root)
-        index_meta: dict[str, Any] = {"path": str(index_dir)}
-        doc_ids, built = self._ensure_index(root, index_dir)
-        index_meta["built"] = built
-        documents_indexed = len(doc_ids)
+    @property
+    def max_file_bytes(self) -> int:
+        """Return the maximum file size considered during indexing."""
+        return self._max_file_bytes
 
-        query_vectors = self._embedder.embed([params.query])
-        query_matrix = np.asarray(query_vectors, dtype="float32")
+    def ensure_index(self, root: Path) -> tuple[list[str], bool]:
+        """Load an existing index or build a new one for ``root``."""
+        index_dir = self.index_directory(root)
+        return self._ensure_index(root, index_dir)
 
-        hits: list[SemanticHit] = []
-        if documents_indexed > 0 and params.topk > 0:
-            topk = min(params.topk, documents_indexed)
-            search_results = self._index.search(query_matrix, topk=topk)
-            first_result = search_results[0] if search_results else []
-            hits = [SemanticHit(path=doc_id, score=score) for doc_id, score in first_result]
-
-        latency_ms = int((time.perf_counter() - start) * 1000)
-        meta = {"index": index_meta, "documents": documents_indexed}
-        return SemanticResult(hits=hits, latency_ms=latency_ms, meta=meta)
-
-    def describe(self) -> str:
-        """Return a human-readable description."""
-        return "Search using embeddings and a vector index."
-
-    def json_schema(self) -> dict[str, object]:
-        """Return the JSON schema for parameters."""
-        return self.Param.model_json_schema()
+    def index_directory(self, root: Path) -> Path:
+        """Return the directory where the index for ``root`` is stored."""
+        digest = hashlib.sha1(
+            str(root.resolve()).encode("utf-8"), usedforsecurity=False,
+        ).hexdigest()
+        return self._index_root / digest
 
     def _ensure_index(self, root: Path, index_dir: Path) -> tuple[list[str], bool]:
-        """Load an existing index or build a new one for ``root``."""
         if self._can_load_index(index_dir):
             try:
                 manifest = self._load_manifest(index_dir)
             except (OSError, ValueError, json.JSONDecodeError):
-                # Fall back to rebuilding the index when persistence is invalid.
                 self._remove_manifest(index_dir)
             else:
                 if self._manifest_matches(manifest):
                     try:
                         self._index.load(str(index_dir))
                     except (OSError, ValueError, RuntimeError):
-                        # Fall back to rebuilding the index when persisted data is corrupt.
                         self._remove_manifest(index_dir)
                     else:
                         documents = [str(doc) for doc in manifest.get("documents", [])]
@@ -101,7 +90,6 @@ class SemanticOpenAITool(Tool[SemanticParams, SemanticResult]):
         return self._build_index(root, index_dir)
 
     def _build_index(self, root: Path, index_dir: Path) -> tuple[list[str], bool]:
-        """Embed files under ``root`` and persist the resulting index."""
         documents = self._collect_documents(root)
         if not documents:
             return [], False
@@ -117,7 +105,6 @@ class SemanticOpenAITool(Tool[SemanticParams, SemanticResult]):
         return doc_ids, True
 
     def _collect_documents(self, root: Path) -> list[_Document]:
-        """Return text documents under ``root`` suitable for indexing."""
         documents: list[_Document] = []
         resolved_root = root.resolve()
         for path in sorted(root.rglob("*")):
@@ -134,7 +121,7 @@ class SemanticOpenAITool(Tool[SemanticParams, SemanticResult]):
                 size = resolved.stat().st_size
             except OSError:
                 continue
-            if size > self.max_file_bytes:
+            if size > self._max_file_bytes:
                 continue
             try:
                 text = resolved.read_text(encoding="utf-8", errors="ignore")
@@ -145,22 +132,14 @@ class SemanticOpenAITool(Tool[SemanticParams, SemanticResult]):
             documents.append(_Document(path=relative, text=text))
         return documents
 
-    def _index_directory(self, root: Path) -> Path:
-        """Return the directory where the index for ``root`` is stored."""
-        digest = hashlib.sha1(str(root.resolve()).encode("utf-8"), usedforsecurity=False).hexdigest()
-        return self._index_root / digest
-
     def _manifest_path(self, index_dir: Path) -> Path:
-        """Return the path to the manifest file for ``index_dir``."""
         return index_dir / self._manifest_name
 
     def _can_load_index(self, index_dir: Path) -> bool:
-        """Return ``True`` if a persisted index appears to exist."""
         manifest_path = self._manifest_path(index_dir)
         return index_dir.is_dir() and manifest_path.is_file()
 
     def _save_manifest(self, index_dir: Path, root: Path, documents: list[str]) -> None:
-        """Persist index metadata describing the stored documents."""
         manifest = {
             "version": 1,
             "root": str(root.resolve()),
@@ -172,7 +151,6 @@ class SemanticOpenAITool(Tool[SemanticParams, SemanticResult]):
             json.dump(manifest, handle)
 
     def _load_manifest(self, index_dir: Path) -> dict[str, Any]:
-        """Load persisted index metadata."""
         with self._manifest_path(index_dir).open(encoding="utf-8") as handle:
             data = json.load(handle)
         if data.get("version") != 1:
@@ -185,7 +163,6 @@ class SemanticOpenAITool(Tool[SemanticParams, SemanticResult]):
         return data
 
     def _remove_manifest(self, index_dir: Path) -> None:
-        """Best-effort removal of a stale manifest before rebuilding."""
         manifest_path = self._manifest_path(index_dir)
         try:
             manifest_path.unlink()
@@ -195,7 +172,6 @@ class SemanticOpenAITool(Tool[SemanticParams, SemanticResult]):
             return
 
     def _manifest_matches(self, manifest: dict[str, Any]) -> bool:
-        """Return ``True`` if the manifest is compatible with the embedder/index."""
         embedder_name = getattr(self._embedder, "name", None)
         embedder_dim = getattr(self._embedder, "dimension", None)
         return (
@@ -205,7 +181,6 @@ class SemanticOpenAITool(Tool[SemanticParams, SemanticResult]):
 
     @staticmethod
     def _relative_path(root: Path, path: Path) -> Path:
-        """Return ``path`` relative to ``root`` with graceful fallback."""
         try:
             return path.relative_to(root)
         except ValueError:
@@ -217,5 +192,65 @@ class SemanticOpenAITool(Tool[SemanticParams, SemanticResult]):
 
     @staticmethod
     def _is_hidden(path: Path) -> bool:
-        """Return ``True`` if any path component is hidden."""
         return any(part.startswith(".") for part in path.parts if part not in {"", "."})
+
+
+class SemanticOpenAITool(Tool[SemanticParams, SemanticResult]):
+    """Embed repository files, persist a vector index, and execute search."""
+
+    name = "semantic.openai"
+    Param = SemanticParams
+    Result = SemanticResult
+
+    max_file_bytes = DEFAULT_MAX_FILE_BYTES
+
+    def __init__(
+        self,
+        embedder: EmbeddingBackend,
+        index_manager: SemanticIndexManager,
+    ) -> None:
+        """Initialise the semantic tool with dependencies."""
+        self._embedder = embedder
+        self._index_manager = index_manager
+
+    @property
+    def index_manager(self) -> SemanticIndexManager:
+        """Expose the index manager for testing and inspection."""
+        return self._index_manager
+
+    def run(self, params: SemanticParams) -> SemanticResult:
+        """Embed the query and search against a persisted vector index."""
+        start = time.perf_counter()
+        root = Path(params.root)
+        if not root.is_dir():
+            latency_ms = int((time.perf_counter() - start) * 1000)
+            meta = {"error": "root-missing", "root": str(root)}
+            return SemanticResult(ok=False, hits=[], latency_ms=latency_ms, meta=meta)
+
+        index_dir = self._index_manager.index_directory(root)
+        index_meta: dict[str, Any] = {"path": str(index_dir)}
+        doc_ids, built = self._index_manager.ensure_index(root)
+        index_meta["built"] = built
+        documents_indexed = len(doc_ids)
+
+        query_vectors = self._embedder.embed([params.query])
+        query_matrix = np.asarray(query_vectors, dtype="float32")
+
+        hits: list[SemanticHit] = []
+        if documents_indexed > 0 and params.topk > 0:
+            topk = min(params.topk, documents_indexed)
+            search_results = self._index_manager.index.search(query_matrix, topk=topk)
+            first_result = search_results[0] if search_results else []
+            hits = [SemanticHit(path=doc_id, score=score) for doc_id, score in first_result]
+
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        meta = {"index": index_meta, "documents": documents_indexed}
+        return SemanticResult(hits=hits, latency_ms=latency_ms, meta=meta)
+
+    def describe(self) -> str:
+        """Return a human-readable description."""
+        return "Search using embeddings and a vector index."
+
+    def json_schema(self) -> dict[str, object]:
+        """Return the JSON schema for parameters."""
+        return self.Param.model_json_schema()

@@ -6,6 +6,10 @@ from typing import TYPE_CHECKING, Any
 
 from codeagent_lab.container import Container, build_container
 from codeagent_lab.settings import Settings
+from codeagent_lab.tools.semantic_openai import (
+    SemanticIndexManager,
+    SemanticOpenAITool,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -101,6 +105,10 @@ def test_build_container_registers_semantic_with_custom_vector_store(
     assert isinstance(container.embeddings, _DummyEmbedding)
     assert isinstance(container.vectordb, _DummyVectorIndex)
     assert "semantic" in container.tools.registry
+    semantic_tool = container.tools.registry["semantic"]
+    assert isinstance(semantic_tool, SemanticOpenAITool)
+    assert isinstance(semantic_tool.index_manager, SemanticIndexManager)
+    assert semantic_tool.index_manager.index is container.vectordb
     assert captured == {
         "backend": "custom-backend",
         "dim": container.embeddings.dimension,
