@@ -24,6 +24,10 @@ class OpenAIEmbedding(EmbeddingBackend):
 
     def __init__(self, api_key: str | None, base_url: str | None, model: str) -> None:
         """Initialise the embedding backend."""
+        if api_key is None or api_key.strip() == "":
+            message = "api_key must be provided for OpenAI embeddings"
+            raise ValueError(message)
+
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         try:
             self.dimension = MODEL_DIMENSIONS[model]

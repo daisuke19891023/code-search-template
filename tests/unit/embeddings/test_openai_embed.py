@@ -49,3 +49,12 @@ def test_openai_embedding_rejects_unknown_model() -> None:
     """Unsupported models are rejected to avoid silent dimension mismatches."""
     with pytest.raises(ValueError, match="unsupported embedding model"):
         OpenAIEmbedding(api_key="key", base_url=None, model="unknown-model")
+
+
+def test_openai_embedding_requires_api_key() -> None:
+    """The backend refuses to initialise without an API key."""
+    with pytest.raises(ValueError, match="api_key must be provided"):
+        OpenAIEmbedding(api_key=None, base_url=None, model="text-embedding-3-small")
+
+    with pytest.raises(ValueError, match="api_key must be provided"):
+        OpenAIEmbedding(api_key="   ", base_url=None, model="text-embedding-3-small")
