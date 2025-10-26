@@ -6,17 +6,24 @@ import json
 
 from typing import Any
 
+import typer
 from pydantic import ValidationError
 
 from codeagent_lab.container import build_container
-
-import typer
 
 app = typer.Typer(help="Run code search tools and inspect their schemas.")
 
 
 @app.command()
-def run(domain: str, params_json: str) -> None:
+def run(
+    domain: str = typer.Option(..., "--domain", "-d", help="Tool domain to execute."),
+    params_json: str = typer.Option(
+        ...,
+        "--params-json",
+        "-p",
+        help="JSON payload matching the tool parameter schema.",
+    ),
+) -> None:
     """Run a tool with JSON parameters."""
     try:
         payload: dict[str, Any] = json.loads(params_json)
@@ -37,19 +44,34 @@ def run(domain: str, params_json: str) -> None:
         typer.echo(exc.json(), err=True)
         raise typer.Exit(code=1) from exc
 
-    result = tool.run(params)
+    try:
+        result = tool.run(params)
+    except Exception as exc:  # pragma: no cover - defensive safety net
+        typer.echo(f"Tool execution failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
     typer.echo(result.model_dump_json(indent=2))
 
 
 @app.command("openai-spec")
-def openai_spec(domain: str | None = None) -> None:
+def openai_spec(
+    domain: str | None = typer.Option(
+        None,
+        "--domain",
+        "-d",
+        help="Limit the output to a single tool domain.",
+    ),
+) -> None:
     """Print the OpenAI function schema for the registered tools."""
     container = build_container()
-    domains = (
-        [(domain, container.tools.get(domain))]
-        if domain is not None
-        else container.tools.items()
-    )
+    try:
+        domains = (
+            [(domain, container.tools.get(domain))]
+            if domain is not None
+            else container.tools.items()
+        )
+    except KeyError as exc:
+        typer.echo(f"Unknown tool domain: {domain}", err=True)
+        raise typer.Exit(code=1) from exc
 
     spec = {
         name: {
