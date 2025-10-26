@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 
-from typing import TYPE_CHECKING
+import pathlib
+
+from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -89,3 +91,36 @@ def test_load_run_records_skips_invalid_trace_rows(tmp_path: Path) -> None:
     records = load_run_records(parquet_root)
 
     assert [record.run_id for record in records] == ["valid-run"]
+
+
+def test_load_run_records_handles_missing_files(monkeypatch: Any, tmp_path: Path) -> None:
+    """Missing backing files do not cause load_run_records to raise errors."""
+    parquet_root = tmp_path / "parquet"
+    parquet_root.mkdir()
+
+    trace = _make_trace("lost-run")
+    table = pa.Table.from_pylist(
+        [
+            {
+                "run_id": "lost-run",
+                "params": json.dumps({}, ensure_ascii=False),
+                "metrics": json.dumps({}, ensure_ascii=False),
+                "trace": json.dumps(trace.model_dump(mode="json"), ensure_ascii=False),
+            },
+        ],
+    )
+    parquet_path = parquet_root / "lost.parquet"
+    pq.write_table(table, str(parquet_path))
+
+    original_stat = pathlib.Path.stat
+
+    def _raising_stat(self: pathlib.Path, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover - helper inside test
+        if self == parquet_path:
+            raise FileNotFoundError
+        return original_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "stat", _raising_stat)
+
+    records = load_run_records(parquet_root)
+
+    assert records == []
