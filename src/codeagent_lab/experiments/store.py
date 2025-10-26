@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from typing import TYPE_CHECKING, Any
 
 import duckdb
@@ -32,6 +33,7 @@ class ExperimentStore:
         trace: FlowTrace,
     ) -> None:
         """Persist a single run to Parquet and DuckDB."""
+        sanitised_run_id = _validate_and_sanitise_run_id(run_id)
         record = {
             "run_id": run_id,
             "params": json.dumps(params, ensure_ascii=False),
@@ -39,7 +41,7 @@ class ExperimentStore:
             "trace": json.dumps(trace.model_dump(mode="json"), ensure_ascii=False),
         }
         table = pa.Table.from_pylist([record])
-        pq_path = self._parquet_root / f"{run_id}.parquet"
+        pq_path = self._parquet_root / f"{sanitised_run_id}.parquet"
         pq.write_table(table, str(pq_path))
         with duckdb.connect(self._duckdb_path) as conn:
             conn.execute(
@@ -56,3 +58,25 @@ class ExperimentStore:
                 "INSERT INTO runs VALUES (?, ?, ?, ?)",
                 [record["run_id"], record["params"], record["metrics"], record["trace"]],
             )
+
+
+_SANITISE_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
+
+
+def _validate_and_sanitise_run_id(run_id: str) -> str:
+    """Validate the run identifier and return a filesystem-safe variant."""
+    if not run_id:
+        msg = "run_id must be a non-empty string"
+        raise ValueError(msg)
+    if any(sep in run_id for sep in ("/", "\\")):
+        msg = "run_id must not contain path separators"
+        raise ValueError(msg)
+    if ".." in run_id:
+        msg = "run_id must not contain '..'"
+        raise ValueError(msg)
+
+    sanitised = _SANITISE_PATTERN.sub("_", run_id).strip("._")
+    if not sanitised:
+        msg = "run_id contains no valid characters after sanitisation"
+        raise ValueError(msg)
+    return sanitised
