@@ -40,7 +40,7 @@ def build_container() -> Container:
             base_url=settings.openai_base_url,
             model=settings.openai_embedding_model,
         )
-        vectordb = create_vector_index(settings.vector_store_backend, dim=3072)
+        vectordb = create_vector_index(settings.vector_store_backend, dim=embedder.dimension)
 
     tools.register("grep", grep_ripgrep.RipgrepTool())
     tools.register("keyword", keyword_bm25.KeywordBM25Tool())

@@ -1,0 +1,3 @@
+
+class Language:
+    def __init__(self, library_path: str, name: str) -> None: ...

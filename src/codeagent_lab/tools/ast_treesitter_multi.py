@@ -27,6 +27,6 @@ class TreeSitterTool(Tool[AstParams, AstResult]):
         """Return a human-readable description."""
         return "Inspect syntax trees using tree-sitter."
 
-    def json_schema(self) -> dict:
+    def json_schema(self) -> dict[str, object]:
         """Return the JSON schema for parameters."""
         return self.Param.model_json_schema()

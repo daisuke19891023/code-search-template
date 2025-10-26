@@ -3,30 +3,38 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any, cast
 
-if TYPE_CHECKING:
-    from codeagent_lab.tools.protocols import Tool
+from codeagent_lab.models import ToolParam, ToolResult
+from codeagent_lab.tools.protocols import Tool
+
+ToolLike = Tool[ToolParam, ToolResult]
+ToolAny = Tool[Any, Any]
+
+
+def _empty_registry() -> dict[str, ToolLike]:
+    """Create an empty tool registry."""
+    return {}
 
 
 @dataclass
 class ToolFactory:
     """Simple registry mapping domains to tool instances."""
 
-    registry: dict[str, Tool[Any, Any]] = field(default_factory=dict)
+    registry: dict[str, ToolLike] = field(default_factory=_empty_registry)
 
-    def register(self, domain: str, tool: Tool[Any, Any]) -> None:
+    def register(self, domain: str, tool: ToolAny) -> None:
         """Register a tool instance under a domain name."""
-        self.registry[domain] = tool
+        self.registry[domain] = cast("ToolLike", tool)
 
-    def get(self, domain: str) -> Tool[Any, Any]:
+    def get(self, domain: str) -> ToolLike:
         """Retrieve a tool by domain name."""
         return self.registry[domain]
 
-    def all(self) -> list[Tool[Any, Any]]:
+    def all(self) -> list[ToolLike]:
         """Return all registered tools."""
         return list(self.registry.values())
 
-    def items(self) -> list[tuple[str, Tool[Any, Any]]]:
+    def items(self) -> list[tuple[str, ToolLike]]:
         """Return ``(domain, tool)`` pairs for registered tools."""
         return list(self.registry.items())

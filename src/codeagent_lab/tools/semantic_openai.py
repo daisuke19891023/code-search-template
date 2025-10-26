@@ -28,6 +28,6 @@ class SemanticOpenAITool(Tool[SemanticParams, SemanticResult]):
         """Return a human-readable description."""
         return "Search using embeddings and a vector index."
 
-    def json_schema(self) -> dict:
+    def json_schema(self) -> dict[str, object]:
         """Return the JSON schema for parameters."""
         return self.Param.model_json_schema()
