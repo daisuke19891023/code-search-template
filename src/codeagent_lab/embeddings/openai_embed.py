@@ -22,13 +22,20 @@ MODEL_DIMENSIONS: dict[str, int] = {
 class OpenAIEmbedding(EmbeddingBackend):
     """Wrapper around the OpenAI embeddings API."""
 
-    def __init__(self, api_key: str | None, base_url: str | None, model: str) -> None:
+    def __init__(
+        self,
+        api_key: str | None,
+        base_url: str | None,
+        model: str,
+        *,
+        client: OpenAI | None = None,
+    ) -> None:
         """Initialise the embedding backend."""
         if api_key is None or api_key.strip() == "":
             message = "api_key must be provided for OpenAI embeddings"
             raise ValueError(message)
 
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.client = client or OpenAI(api_key=api_key, base_url=base_url)
         try:
             self.dimension = MODEL_DIMENSIONS[model]
         except KeyError as error:
