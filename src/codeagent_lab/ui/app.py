@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import json
 import pathlib
 from dataclasses import dataclass
@@ -13,6 +14,9 @@ import streamlit as st
 
 from codeagent_lab.models import FlowTrace, ToolCall
 from codeagent_lab.settings import Settings
+from pydantic import ValidationError
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -115,7 +119,13 @@ def _record_from_row(row: dict[str, Any], path: pathlib.Path) -> RunRecord | Non
     trace_payload = _load_json(row.get("trace"))
     try:
         trace = FlowTrace.model_validate(trace_payload)
-    except ValueError:
+    except (ValidationError, ValueError) as error:
+        logger.warning(
+            "Skipping run %s from %s due to invalid trace payload: %s",
+            run_id,
+            path,
+            error,
+        )
         return None
     return RunRecord(
         run_id=run_id,
