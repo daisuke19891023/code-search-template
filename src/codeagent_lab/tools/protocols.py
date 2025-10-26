@@ -19,15 +19,12 @@ class Tool(Protocol, Generic[P, R]):
 
     def run(self, params: P) -> R:
         """Execute the tool using the provided parameters."""
-
         ...
 
     def describe(self) -> str:
         """Return a human-readable description of the tool."""
-
         ...
 
     def json_schema(self) -> dict[str, object]:
         """Return a JSON schema describing the parameters."""
-
         ...
