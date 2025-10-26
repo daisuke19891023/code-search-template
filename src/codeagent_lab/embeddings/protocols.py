@@ -9,6 +9,8 @@ class EmbeddingBackend(Protocol):
     """Protocol describing an embedding backend."""
 
     name: str
+    dimension: int
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Embed the given texts into dense vectors."""
+        ...
