@@ -91,7 +91,13 @@ def load_run_records(parquet_root: pathlib.Path) -> list[RunRecord]:
             if record is not None:
                 records.append(record)
 
-    records.sort(key=lambda record: record.path.stat().st_mtime, reverse=True)
+    def _sort_key(record: RunRecord) -> float:
+        try:
+            return record.path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    records.sort(key=_sort_key, reverse=True)
     return records
 
 
