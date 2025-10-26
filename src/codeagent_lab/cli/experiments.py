@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
+from pydantic import ValidationError
 
 from codeagent_lab.experiments.optimizer import run_optimization
 from codeagent_lab.settings import Settings
@@ -31,7 +32,11 @@ def optimize(dataset: str, n_trials: int = 10, timeout: int | None = None) -> No
         typer.secho("n-trials must be greater than zero", err=True, fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
-    settings = Settings()
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        typer.secho(f"Failed to load settings: {exc}", err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
     dataset_config, study = run_optimization(
         dataset_path=dataset_path,
         storage=str(settings.optuna_storage),
