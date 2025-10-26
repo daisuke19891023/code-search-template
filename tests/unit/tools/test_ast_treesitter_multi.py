@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from importlib import import_module
 from typing import TYPE_CHECKING
 
 import pytest
@@ -12,6 +13,7 @@ from codeagent_lab.tools.ast_treesitter_multi import TreeSitterTool
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from types import ModuleType
 
 
 pytest.importorskip("tree_sitter")
@@ -101,3 +103,20 @@ def test_tree_sitter_ignores_symlinks_outside_root(tmp_path: Path) -> None:
 
     assert result.ok is True
     assert all(finding.text != "baz" for finding in result.findings)
+
+
+def test_language_missing_when_module_import_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Import failures are treated as missing languages rather than raising."""
+    provider = TreeSitterProvider()
+    original_import = import_module
+
+    def failing_import(name: str, package: str | None = None) -> ModuleType:
+        if name == "tree_sitter_python":
+            raise ImportError("boom")
+        return original_import(name, package)
+
+    monkeypatch.setattr("codeagent_lab.ast.ts_provider.import_module", failing_import)
+
+    languages = provider.get_languages(["python"])
+
+    assert "python" not in languages
