@@ -95,7 +95,10 @@ def _register_core_tools(tools: ToolFactory, settings: Settings) -> None:
     if settings.keyword_backend != "bm25":
         message = f"unsupported keyword backend: {settings.keyword_backend}"
         raise ValueError(message)
-    tools.register("keyword", keyword_bm25.KeywordBM25Tool())
+    tools.register(
+        "keyword",
+        keyword_bm25.KeywordBM25Tool(index_root=settings.index_root),
+    )
 
     find_backend = getattr(settings, "find_backend", "fd")
     if find_backend != "fd":
