@@ -15,7 +15,7 @@ R = TypeVar("R", bound=ToolResult)
 
 def tool_to_openai_spec(tool: Tool[P, R]) -> dict[str, Any]:
     """Convert a tool into an OpenAI function tool schema."""
-    schema = tool.Param.model_json_schema()
+    schema = tool.json_schema()
     return {
         "type": "function",
         "function": {
