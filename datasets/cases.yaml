@@ -1,1 +1,1 @@
-# Placeholder dataset for optimization experiments.
+{"baseline_score": 0.25, "dimensions": [{"name": "alpha", "low": 0.0, "high": 1.0, "target": 0.7, "weight": 0.6}, {"name": "beta", "low": 0.0, "high": 1.0, "target": 0.2, "weight": 0.4}]}
