@@ -38,7 +38,7 @@ class ExperimentStore:
         }
         table = pa.Table.from_pylist([record])
         pq_path = self._parquet_root / f"{run_id}.parquet"
-        pq.write_table(table, pq_path)
+        pq.write_table(table, str(pq_path))
         with duckdb.connect(self._duckdb_path) as conn:
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS runs AS SELECT * FROM read_parquet(?)",

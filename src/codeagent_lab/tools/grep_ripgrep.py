@@ -1,9 +1,8 @@
-"""Ripgrep-based search tool using the ``rg`` executable."""
+"""Ripgrep-inspired search tool with a pure-Python implementation."""
 
 from __future__ import annotations
 
-import json
-import subprocess
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -33,116 +32,54 @@ class RipgrepTool(Tool[GrepParams, GrepResult]):
             )
 
         try:
-            completed = subprocess.run(
-                [
-                    "/usr/bin/env",
-                    "rg",
-                    "--json",
-                    "-n",
-                    "-S",
-                    "--hidden",
-                    "-f",
-                    "-",
-                    ".",
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=params.timeout_s,
-                cwd=str(root),
-                input=f"{params.pattern}\n",
-            )
-        except FileNotFoundError:
+            hits = self._python_search(root, params.pattern)
+        except re.error as exc:
             latency_ms = int((time.perf_counter() - start) * 1000)
-            return GrepResult(
-                ok=False,
-                hits=[],
-                latency_ms=latency_ms,
-                meta={
-                    "error": "rg-not-found",
-                    "command": [
-                        "/usr/bin/env",
-                        "rg",
-                        "--json",
-                        "-n",
-                        "-S",
-                        "--hidden",
-                        "-f",
-                        "-",
-                        ".",
-                    ],
-                },
-            )
-        except subprocess.TimeoutExpired as exc:
-            latency_ms = int((time.perf_counter() - start) * 1000)
-            return GrepResult(
-                ok=False,
-                hits=[],
-                latency_ms=latency_ms,
-                meta={
-                    "error": "timeout",
-                    "timeout_s": params.timeout_s,
-                    "command": [
-                        "/usr/bin/env",
-                        "rg",
-                        "--json",
-                        "-n",
-                        "-S",
-                        "--hidden",
-                        "-f",
-                        "-",
-                        ".",
-                    ],
-                    "stdout": exc.stdout,
-                    "stderr": exc.stderr,
-                },
-            )
+            meta: dict[str, Any] = {
+                "error": "invalid-pattern",
+                "pattern": params.pattern,
+                "message": str(exc),
+                "exit_code": 2,
+            }
+            return GrepResult(ok=False, hits=[], latency_ms=latency_ms, meta=meta)
 
-        hits = self._parse_stdout(completed.stdout)
         latency_ms = int((time.perf_counter() - start) * 1000)
-        ok = completed.returncode in (0, 1)
+        exit_code = 0 if hits else 1
         meta: dict[str, Any] = {
-            "command": list(completed.args) if isinstance(completed.args, (list, tuple)) else completed.args,
-            "exit_code": completed.returncode,
+            "executor": "python-fallback",
+            "pattern": params.pattern,
+            "exit_code": exit_code,
         }
-        stderr = completed.stderr.strip()
-        if stderr:
-            meta["stderr"] = stderr
-        return GrepResult(ok=ok, hits=hits, latency_ms=latency_ms, meta=meta)
+        return GrepResult(ok=True, hits=hits, latency_ms=latency_ms, meta=meta)
 
     def describe(self) -> str:
         """Return a human-readable description."""
         return "Search files using ripgrep."
 
-    def json_schema(self) -> dict:
+    def json_schema(self) -> dict[str, object]:
         """Return the JSON schema for parameters."""
         return self.Param.model_json_schema()
 
     @staticmethod
-    def _parse_stdout(stdout: str) -> list[GrepHit]:
-        """Parse ripgrep JSON output and return a list of hits."""
-        hits = []
-        for raw_line in stdout.splitlines():
-            line = raw_line.strip()
-            if not line:
+    def _python_search(root: Path, pattern: str) -> list[GrepHit]:
+        """Search files using a pure Python implementation."""
+        regex = re.compile(pattern)
+        hits: list[GrepHit] = []
+        for file_path in root.rglob("*"):
+            if not file_path.is_file():
                 continue
             try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
                 continue
-            if payload.get("type") != "match":
-                continue
-            data = payload.get("data", {})
-            path_info = data.get("path", {})
-            line_number = data.get("line_number")
-            line_text = data.get("lines", {}).get("text", "")
-            if not path_info or line_number is None:
-                continue
-            hits.append(
-                GrepHit(
-                    path=path_info.get("text", ""),
-                    line=int(line_number),
-                    text=line_text.rstrip("\n"),
-                ),
-            )
+            for line_number, line in enumerate(content.splitlines(), start=1):
+                if not regex.search(line):
+                    continue
+                try:
+                    relative = file_path.relative_to(root)
+                except ValueError:
+                    relative = file_path
+                hits.append(
+                    GrepHit(path=str(relative), line=line_number, text=line.rstrip("\n")),
+                )
         return hits

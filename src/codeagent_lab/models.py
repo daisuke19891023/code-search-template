@@ -7,6 +7,36 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
+def _empty_grep_hits() -> list[GrepHit]:
+    """Return an empty list for grep hits."""
+    return []
+
+
+def _empty_keyword_hits() -> list[KeywordHit]:
+    """Return an empty list for keyword hits."""
+    return []
+
+
+def _empty_semantic_hits() -> list[SemanticHit]:
+    """Return an empty list for semantic hits."""
+    return []
+
+
+def _empty_ast_findings() -> list[AstFinding]:
+    """Return an empty list for AST findings."""
+    return []
+
+
+def _empty_find_items() -> list[FindItem]:
+    """Return an empty list for fd results."""
+    return []
+
+
+def _empty_tool_calls() -> list[ToolCall]:
+    """Return an empty list for tool calls."""
+    return []
+
+
 class ToolParam(BaseModel):
     """Base class for tool parameters."""
 
@@ -38,7 +68,7 @@ class GrepHit(BaseModel):
 class GrepResult(ToolResult):
     """Result payload for grep searches."""
 
-    hits: list[GrepHit] = Field(default_factory=list)
+    hits: list[GrepHit] = Field(default_factory=_empty_grep_hits)
 
 
 class KeywordParams(ToolParam):
@@ -59,7 +89,7 @@ class KeywordHit(BaseModel):
 class KeywordResult(ToolResult):
     """Result payload for keyword search."""
 
-    hits: list[KeywordHit] = Field(default_factory=list)
+    hits: list[KeywordHit] = Field(default_factory=_empty_keyword_hits)
 
 
 class SemanticParams(ToolParam):
@@ -80,7 +110,7 @@ class SemanticHit(BaseModel):
 class SemanticResult(ToolResult):
     """Result payload for semantic search."""
 
-    hits: list[SemanticHit] = Field(default_factory=list)
+    hits: list[SemanticHit] = Field(default_factory=_empty_semantic_hits)
 
 
 class AstParams(ToolParam):
@@ -104,7 +134,7 @@ class AstFinding(BaseModel):
 class AstResult(ToolResult):
     """Result payload for AST searches."""
 
-    findings: list[AstFinding] = Field(default_factory=list)
+    findings: list[AstFinding] = Field(default_factory=_empty_ast_findings)
 
 
 class FindParams(ToolParam):
@@ -124,7 +154,7 @@ class FindItem(BaseModel):
 class FindResult(ToolResult):
     """Result payload for fd discovery."""
 
-    items: list[FindItem] = Field(default_factory=list)
+    items: list[FindItem] = Field(default_factory=_empty_find_items)
 
 
 class ToolCall(BaseModel):
@@ -140,5 +170,5 @@ class FlowTrace(BaseModel):
     """Aggregated execution trace for a run."""
 
     run_id: str
-    calls: list[ToolCall] = Field(default_factory=list)
+    calls: list[ToolCall] = Field(default_factory=_empty_tool_calls)
     metrics: dict[str, float] = Field(default_factory=dict)

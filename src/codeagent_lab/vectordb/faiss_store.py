@@ -52,10 +52,12 @@ class FaissIndex(VectorIndex):
         results: list[list[tuple[str, float]]] = []
         for row, dist_row in zip(indices, distances, strict=True):
             hits: list[tuple[str, float]] = []
-            for idx, score in zip(row, dist_row, strict=True):
+            index_values = [int(value) for value in row]
+            score_values = [float(value) for value in dist_row]
+            for idx, score in zip(index_values, score_values, strict=True):
                 if idx == -1:
                     continue
-                hits.append((self._ids[idx], float(score)))
+                hits.append((self._ids[idx], score))
             results.append(hits)
         return results
 

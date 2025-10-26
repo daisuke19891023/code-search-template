@@ -13,3 +13,4 @@ class AstLanguageProvider(Protocol):
 
     def get_languages(self, names: list[str]) -> dict[str, Language]:
         """Return a mapping of language names to tree-sitter Language objects."""
+        ...

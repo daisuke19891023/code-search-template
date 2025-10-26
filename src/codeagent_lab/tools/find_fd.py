@@ -22,6 +22,6 @@ class FdTool(Tool[FindParams, FindResult]):
         """Return a human-readable description."""
         return "List files using fd."
 
-    def json_schema(self) -> dict:
+    def json_schema(self) -> dict[str, object]:
         """Return the JSON schema for parameters."""
         return self.Param.model_json_schema()
