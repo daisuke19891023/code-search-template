@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import pytest
@@ -29,7 +30,7 @@ def test_keyword_bm25_ranks_relevant_files(tmp_path: Path) -> None:
         "BM25 ranking algorithms score documents for keyword search. Ranking is repeated.\n",
     )
 
-    tool = KeywordBM25Tool()
+    tool = KeywordBM25Tool(index_root=tmp_path / "indexes")
     params = KeywordParams(query="ranking search algorithm", root=str(tmp_path), topk=3)
 
     result = tool.run(params)
@@ -45,7 +46,7 @@ def test_keyword_bm25_honors_topk(tmp_path: Path) -> None:
     (tmp_path / "first.txt").write_text("alpha beta gamma\n")
     (tmp_path / "second.txt").write_text("alpha beta\n")
 
-    tool = KeywordBM25Tool()
+    tool = KeywordBM25Tool(index_root=tmp_path / "indexes")
     params = KeywordParams(query="alpha", root=str(tmp_path), topk=1)
 
     result = tool.run(params)
@@ -58,7 +59,7 @@ def test_keyword_bm25_reports_missing_root(tmp_path: Path) -> None:
     """Missing roots are reported as errors with ``ok=False``."""
     missing_root = tmp_path / "missing"
 
-    tool = KeywordBM25Tool()
+    tool = KeywordBM25Tool(index_root=tmp_path / "indexes")
     params = KeywordParams(query="anything", root=str(missing_root))
 
     result = tool.run(params)
@@ -82,7 +83,7 @@ def test_keyword_bm25_ignores_symlinks_outside_root(tmp_path: Path) -> None:
     link = repo_root / "link.txt"
     _create_symlink(link, external_file)
 
-    tool = KeywordBM25Tool()
+    tool = KeywordBM25Tool(index_root=tmp_path / "indexes")
     params = KeywordParams(query="ranking", root=str(repo_root), topk=5)
 
     result = tool.run(params)
@@ -90,3 +91,57 @@ def test_keyword_bm25_ignores_symlinks_outside_root(tmp_path: Path) -> None:
     assert result.ok is True
     paths = {hit.path for hit in result.hits}
     assert paths == {"inside.txt"}
+
+
+def test_keyword_index_manager_reuses_cache(tmp_path: Path) -> None:
+    """Cached tokens are reused when the repository is unchanged."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "first.txt").write_text("Alpha beta gamma.\n")
+    (repo_root / "second.txt").write_text("Gamma delta epsilon.\n")
+
+    index_root = tmp_path / "indexes"
+    tool = KeywordBM25Tool(index_root=index_root)
+
+    documents, changed = tool.index_manager.ensure_documents(repo_root)
+
+    assert changed is True
+    assert sorted(doc.path.name for doc in documents) == ["first.txt", "second.txt"]
+
+    reuse_tool = KeywordBM25Tool(index_root=index_root)
+    reused_documents, reused_changed = reuse_tool.index_manager.ensure_documents(repo_root)
+
+    assert reused_changed is False
+    assert [doc.path.name for doc in reused_documents] == [doc.path.name for doc in documents]
+
+
+def test_keyword_index_manager_updates_changed_files(tmp_path: Path) -> None:
+    """Only changed files are re-tokenised when the repository mutates."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    first_file = repo_root / "first.txt"
+    second_file = repo_root / "second.txt"
+    first_file.write_text("Original alpha beta.\n")
+    second_file.write_text("Original gamma delta.\n")
+
+    index_root = tmp_path / "indexes"
+    tool = KeywordBM25Tool(index_root=index_root)
+
+    _, initial_changed = tool.index_manager.ensure_documents(repo_root)
+    assert initial_changed is True
+
+    manifest_path = next(index_root.rglob("manifest.json"))
+    initial_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    first_entry = initial_manifest["files"]["first.txt"]
+    second_entry = initial_manifest["files"]["second.txt"]
+    first_hash = first_entry["hash"]
+    second_hash = second_entry["hash"]
+
+    first_file.write_text("Updated alpha beta content.\n")
+
+    _, subsequent_changed = tool.index_manager.ensure_documents(repo_root)
+    assert subsequent_changed is True
+
+    updated_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert updated_manifest["files"]["first.txt"]["hash"] != first_hash
+    assert updated_manifest["files"]["second.txt"]["hash"] == second_hash

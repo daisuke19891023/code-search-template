@@ -38,6 +38,10 @@ Execute all commands with `uv run` to ensure they use the managed environment.
   uv run lab tools run --domain semantic --params-json '{"query":"embedding factory","root":"."}'
   ```
 
+### Storage
+- Keyword search persists tokenised caches beneath `LAB_INDEX_ROOT` (default `.labdata/indexes`).
+  The cache is reused automatically and invalidated when source files or keyword settings change.
+
 ### Additional Commands
 - Inspect CLI entrypoints:
   ```bash
@@ -95,6 +99,10 @@ codeagent-lab プロジェクトは、ソースコード検索の再現可能な
   ```bash
   uv run lab tools run --domain semantic --params-json '{"query":"embedding factory","root":"."}'
   ```
+
+### ストレージ
+- キーワード検索では、トークン化済みのキャッシュを `LAB_INDEX_ROOT`（既定値 `.labdata/indexes`）以下に保存します。
+  リポジトリの変更やキーワード設定の変更を検知すると、自動的にキャッシュを再構築します。
 
 ### 追加コマンド
 - CLI エントリーポイントの確認:
